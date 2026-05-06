@@ -1,2 +1,0 @@
-# Bolaodds
-Got money
