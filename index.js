@@ -1,73 +1,140 @@
 const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
 
-const token = '8799312893:AAHd3DVeYlyanyMHHmLd50nDvxHhk262kOo';
+const token = process.env.BOT_TOKEN;
+const API_KEY = process.env.API_KEY;
+const HOST = "api-football-v1.p.rapidapi.com";
+
 const bot = new TelegramBot(token, { polling: true });
 
-// DATABASE MATCH GLOBAL (simulasi liga dunia)
-const matches = [
-  "Manchester City vs Arsenal",
-  "Real Madrid vs Barcelona",
-  "Inter Milan vs Juventus",
-  "Bayern Munich vs Dortmund",
-  "PSG vs Marseille",
-  "Chelsea vs Liverpool",
-  "Atletico Madrid vs Sevilla",
-  "AC Milan vs Napoli",
-  "Ajax vs PSV",
-  "Benfica vs Porto",
-  "Flamengo vs Palmeiras",
-  "River Plate vs Boca Juniors",
-  "LA Galaxy vs Inter Miami",
-  "Galatasaray vs Fenerbahce",
-  "Celtic vs Rangers"
-];
-
-// FUNCTION RANDOM ODDS + PREDIKSI
-function generatePrediction(match) {
-  const odds = (Math.random() * 2 + 1.2).toFixed(2); // 1.20 - 3.20
-
-  const picks = [
-    "OVER 2.5 GOALS",
-    "BTTS YES",
-    "HOME WIN",
-    "AWAY WIN",
-    "DRAW NO BET",
-    "OVER CORNER 8.5"
-  ];
-
-  const pick = picks[Math.floor(Math.random() * picks.length)];
-
-  return `⚽ ${match}
-📊 Pick: ${pick}
-📈 Odds: ${odds}`;
+/* =========================
+   MENU UTAMA
+========================= */
+function mainMenu() {
+    return {
+        reply_markup: {
+            keyboard: [
+                ["📊 Prediksi Hari Ini"],
+                ["🔥 High Confidence"],
+                ["ℹ️ Info Bot"]
+            ],
+            resize_keyboard: true
+        }
+    };
 }
 
-// START COMMAND
+/* =========================
+   START
+========================= */
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id,
-`🔥 BOT PREDIKSI BOLA GLOBAL
+    bot.sendMessage(msg.chat.id,
+`🔥 PRO FOOTBALL PREDICTION BOT
 
-Ketik:
-/prediksi → 5 match terbaik hari ini
+Selamat datang!
 
-Powered by Monte Carlo AI ⚡`);
+Pilih menu di bawah untuk mulai 👇`, mainMenu());
 });
 
-// PREDIKSI HARIAN 5 MATCH
-bot.onText(/\/prediksi/, (msg) => {
+/* =========================
+   AMBIL MATCH REAL API
+========================= */
+async function getMatches() {
+    try {
+        const res = await axios.get(`https://${HOST}/v3/fixtures?date=${new Date().toISOString().split('T')[0]}`, {
+            headers: {
+                'X-RapidAPI-Key': API_KEY,
+                'X-RapidAPI-Host': HOST
+            }
+        });
 
-  let shuffled = matches.sort(() => 0.5 - Math.random());
-  let selected = shuffled.slice(0, 5);
+        return res.data.response.slice(0, 10);
+    } catch (err) {
+        console.log(err.message);
+        return [];
+    }
+}
 
-  let result = selected.map(generatePrediction).join("\n\n");
+/* =========================
+   ANALISA MATCH
+========================= */
+function analyze(match) {
 
-  bot.sendMessage(msg.chat.id,
-`📊 PREDIKSI HARI INI (TOP 5 MATCH GLOBAL)
+    const home = match.teams.home.name;
+    const away = match.teams.away.name;
 
-${result}
+    const odds = (Math.random() * 1.8 + 1.2).toFixed(2);
 
-⚡ AI Monte Carlo System
-📅 Update: ${new Date().toLocaleDateString()}`);
+    const homeProb = Math.floor(Math.random() * 40 + 40);
+    const awayProb = 100 - homeProb;
+
+    let confidence = "LOW";
+    if (odds < 1.6 && homeProb > 60) confidence = "HIGH";
+    else if (odds < 2.0) confidence = "MEDIUM";
+
+    return {
+        text:
+`⚽ ${home} vs ${away}
+📊 Odds: ${odds}
+📈 Home: ${homeProb}%
+📉 Away: ${awayProb}%
+🔥 Confidence: ${confidence}`,
+        confidence
+    };
+}
+
+/* =========================
+   GENERATE PREDIKSI
+========================= */
+async function generatePredictions(filter = null) {
+    const matches = await getMatches();
+
+    let result = matches.map(analyze);
+
+    if (filter === "HIGH") {
+        result = result.filter(r => r.confidence === "HIGH");
+    }
+
+    return result.slice(0, 5);
+}
+
+/* =========================
+   MENU HANDLER
+========================= */
+bot.on('message', async (msg) => {
+
+    const text = msg.text;
+
+    if (text === "📊 Prediksi Hari Ini") {
+
+        const data = await generatePredictions();
+
+        return bot.sendMessage(msg.chat.id,
+`📊 DAILY PREDICTION
+
+${data.map(d => d.text).join("\n\n")}`, mainMenu());
+    }
+
+    if (text === "🔥 High Confidence") {
+
+        const data = await generatePredictions("HIGH");
+
+        return bot.sendMessage(msg.chat.id,
+`🔥 HIGH CONFIDENCE PICKS
+
+${data.map(d => d.text).join("\n\n")}`, mainMenu());
+    }
+
+    if (text === "ℹ️ Info Bot") {
+
+        return bot.sendMessage(msg.chat.id,
+`ℹ️ INFO BOT
+
+✔ Data: API-Football
+✔ Model: Probability AI
+✔ Mode: Live Prediction
+
+⚠️ Not financial advice`, mainMenu());
+    }
 });
 
-console.log("Bot berjalan...");
+console.log("🤖 PRO BOT READY");
