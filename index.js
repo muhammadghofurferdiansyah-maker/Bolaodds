@@ -5,12 +5,16 @@ const token = process.env.BOT_TOKEN;
 const API_KEY = process.env.API_KEY;
 const HOST = "api-football-v1.p.rapidapi.com";
 
+if (!token || !API_KEY) {
+    console.log("ENV belum lengkap");
+}
+
 const bot = new TelegramBot(token, { polling: true });
 
-/* =========================
-   MENU UTAMA
-========================= */
-function mainMenu() {
+console.log("BOT RUNNING");
+
+/* ================= MENU ================= */
+function menu() {
     return {
         reply_markup: {
             keyboard: [
@@ -23,40 +27,36 @@ function mainMenu() {
     };
 }
 
-/* =========================
-   START
-========================= */
+/* ================= START ================= */
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id,
-`🔥 PRO FOOTBALL PREDICTION BOT
-
-Selamat datang!
-
-Pilih menu di bawah untuk mulai 👇`, mainMenu());
+    bot.sendMessage(
+        msg.chat.id,
+        "🔥 FOOTBALL PREDICTION BOT\n\nPilih menu 👇",
+        menu()
+    );
 });
 
-/* =========================
-   AMBIL MATCH REAL API
-========================= */
+/* ================= AMBIL MATCH ================= */
 async function getMatches() {
     try {
-        const res = await axios.get(`https://${HOST}/v3/fixtures?date=${new Date().toISOString().split('T')[0]}`, {
-            headers: {
-                'X-RapidAPI-Key': API_KEY,
-                'X-RapidAPI-Host': HOST
+        const res = await axios.get(
+            `https://${HOST}/v3/fixtures?date=${new Date().toISOString().split('T')[0]}`,
+            {
+                headers: {
+                    "X-RapidAPI-Key": API_KEY,
+                    "X-RapidAPI-Host": HOST
+                }
             }
-        });
+        );
 
-        return res.data.response.slice(0, 10);
+        return res.data.response || [];
     } catch (err) {
-        console.log(err.message);
+        console.log("API ERROR:", err.message);
         return [];
     }
 }
 
-/* =========================
-   ANALISA MATCH
-========================= */
+/* ================= ANALISA ================= */
 function analyze(match) {
 
     const home = match.teams.home.name;
@@ -82,59 +82,57 @@ function analyze(match) {
     };
 }
 
-/* =========================
-   GENERATE PREDIKSI
-========================= */
-async function generatePredictions(filter = null) {
+/* ================= GENERATE ================= */
+async function generate(type = null) {
+
     const matches = await getMatches();
 
-    let result = matches.map(analyze);
+    if (!matches.length) return [];
 
-    if (filter === "HIGH") {
-        result = result.filter(r => r.confidence === "HIGH");
+    let data = matches.map(analyze);
+
+    if (type === "HIGH") {
+        data = data.filter(x => x.confidence === "HIGH");
     }
 
-    return result.slice(0, 5);
+    return data.slice(0, 5);
 }
 
-/* =========================
-   MENU HANDLER
-========================= */
-bot.on('message', async (msg) => {
+/* ================= HANDLER ================= */
+bot.on("message", async (msg) => {
 
     const text = msg.text;
 
     if (text === "📊 Prediksi Hari Ini") {
 
-        const data = await generatePredictions();
+        const data = await generate();
 
-        return bot.sendMessage(msg.chat.id,
-`📊 DAILY PREDICTION
-
-${data.map(d => d.text).join("\n\n")}`, mainMenu());
+        return bot.sendMessage(
+            msg.chat.id,
+            "📊 PREDIKSI HARI INI\n\n" +
+            data.map(d => d.text).join("\n\n"),
+            menu()
+        );
     }
 
     if (text === "🔥 High Confidence") {
 
-        const data = await generatePredictions("HIGH");
+        const data = await generate("HIGH");
 
-        return bot.sendMessage(msg.chat.id,
-`🔥 HIGH CONFIDENCE PICKS
-
-${data.map(d => d.text).join("\n\n")}`, mainMenu());
+        return bot.sendMessage(
+            msg.chat.id,
+            "🔥 HIGH CONFIDENCE PICKS\n\n" +
+            data.map(d => d.text).join("\n\n"),
+            menu()
+        );
     }
 
     if (text === "ℹ️ Info Bot") {
 
-        return bot.sendMessage(msg.chat.id,
-`ℹ️ INFO BOT
-
-✔ Data: API-Football
-✔ Model: Probability AI
-✔ Mode: Live Prediction
-
-⚠️ Not financial advice`, mainMenu());
+        return bot.sendMessage(
+            msg.chat.id,
+            "ℹ️ Bot Live Football Prediction\nAPI: API-Football\nMode: AI Probability",
+            menu()
+        );
     }
 });
-
-console.log("🤖 PRO BOT READY");
