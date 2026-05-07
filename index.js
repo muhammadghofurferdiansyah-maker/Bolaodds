@@ -1,7 +1,7 @@
 /*
 ====================================================
- STABLE WORLD FOOTBALL BOT
- FIX ALL API ISSUES
+ULTIMATE WORLD FOOTBALL BOT
+STABLE + RAILWAY READY + API FOOTBALL FIX
 ====================================================
 */
 
@@ -14,7 +14,7 @@ const moment = require("moment-timezone");
 moment.tz.setDefault("Asia/Jakarta");
 
 // ====================================================
-// VALIDATE ENV
+// ENV VALIDATION
 // ====================================================
 
 if (!process.env.BOT_TOKEN) {
@@ -28,21 +28,17 @@ if (!process.env.FOOTBALL_API_KEY) {
 }
 
 // ====================================================
-// TELEGRAM
+// TELEGRAM BOT
 // ====================================================
 
 const bot = new TelegramBot(
   process.env.BOT_TOKEN,
   {
-    polling: {
-      interval: 300,
-      autoStart: true,
-      params: {
-        timeout: 10,
-      },
-    },
+    polling: true,
   }
 );
+
+console.log("✅ TELEGRAM CONNECTED");
 
 // ====================================================
 // API CONFIG
@@ -69,31 +65,48 @@ const api = axios.create({
 });
 
 // ====================================================
+// SAFE DELAY
+// ====================================================
+
+function delay(ms) {
+  return new Promise((r) =>
+    setTimeout(r, ms)
+  );
+}
+
+// ====================================================
 // SAFE REQUEST
 // ====================================================
 
-async function safeGet(url, retry = 3) {
-
+async function safeGet(
+  endpoint,
+  retry = 3
+) {
   for (let i = 1; i <= retry; i++) {
-
     try {
 
-      console.log(`🌐 REQUEST: ${url}`);
+      console.log(
+        `🌐 REQUEST: ${endpoint}`
+      );
 
-      const response = await api.get(url);
-
-      // LOG RESPONSE
-      console.log("✅ API CONNECTED");
+      const response =
+        await api.get(endpoint);
 
       if (!response.data) {
-        throw new Error("EMPTY RESPONSE");
+        throw new Error(
+          "EMPTY RESPONSE"
+        );
       }
+
+      console.log("✅ API SUCCESS");
 
       return response.data;
 
     } catch (err) {
 
-      console.log(`❌ API ERROR ${i}`);
+      console.log(
+        `❌ API ERROR RETRY ${i}`
+      );
 
       if (err.response) {
 
@@ -103,8 +116,9 @@ async function safeGet(url, retry = 3) {
         );
 
         console.log(
-          "DATA:",
-          JSON.stringify(err.response.data)
+          JSON.stringify(
+            err.response.data
+          )
         );
 
       } else {
@@ -117,34 +131,26 @@ async function safeGet(url, retry = 3) {
         return null;
       }
 
-      await delay(3000);
+      await delay(2500);
     }
   }
 }
 
 // ====================================================
-// DELAY
-// ====================================================
-
-function delay(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-// ====================================================
-// SAFE SEASON
+// CURRENT SEASON
 // ====================================================
 
 function getSeason() {
 
   const now = moment();
 
-  let year = now.year();
+  let season = now.year();
 
   if (now.month() < 6) {
-    year -= 1;
+    season -= 1;
   }
 
-  return year;
+  return season;
 }
 
 // ====================================================
@@ -161,52 +167,58 @@ async function getFixtures() {
       .add(7, "days")
       .format("YYYY-MM-DD");
 
-  const season = getSeason();
+  const season =
+    getSeason();
 
   const endpoint =
     `/fixtures?season=${season}` +
     `&from=${from}` +
-    `&to=${to}`;
+    `&to=${to}` +
+    `&timezone=Asia/Jakarta`;
 
-  const data = await safeGet(endpoint);
+  const data =
+    await safeGet(endpoint);
 
-  if (!data) {
-    return [];
-  }
-
-  if (data.errors) {
-
-    console.log("❌ API ERRORS");
-    console.log(data.errors);
-
-  }
-
-  if (!data.response) {
+  if (
+    !data ||
+    !data.response
+  ) {
     return [];
   }
 
   console.log(
-    `✅ FIXTURES: ${data.response.length}`
+    `✅ FIXTURES FOUND: ${data.response.length}`
   );
 
-  return data.response.map((match) => ({
-    fixtureId: match.fixture.id,
+  return data.response.map(
+    (match) => ({
+      fixtureId:
+        match.fixture?.id,
 
-    league:
-      match.league?.name || "Unknown",
+      league:
+        match.league?.name ||
+        "Unknown League",
 
-    country:
-      match.league?.country || "Unknown",
+      country:
+        match.league?.country ||
+        "Unknown Country",
 
-    home:
-      match.teams?.home?.name || "Home",
+      home:
+        match.teams?.home?.name ||
+        "Home",
 
-    away:
-      match.teams?.away?.name || "Away",
+      away:
+        match.teams?.away?.name ||
+        "Away",
 
-    date:
-      match.fixture?.date || null,
-  }));
+      date:
+        match.fixture?.date,
+
+      status:
+        match.fixture?.status
+          ?.short || "NS",
+    })
+  );
 }
 
 // ====================================================
@@ -218,7 +230,7 @@ async function getOdds(fixtureId) {
   try {
 
     const endpoint =
-      `/odds?fixture=${fixtureId}`;
+      `/odds?fixture=${fixtureId}&bookmaker=8`;
 
     const data =
       await safeGet(endpoint);
@@ -239,9 +251,10 @@ async function getOdds(fixtureId) {
     }
 
     const bookmakers =
-      data.response[0]?.bookmakers || [];
+      data.response[0]
+        ?.bookmakers || [];
 
-    let result = {
+    let odds = {
       over25: "-",
       under25: "-",
       bttsYes: "-",
@@ -253,6 +266,7 @@ async function getOdds(fixtureId) {
       for (const bet of bookmaker.bets) {
 
         // OVER UNDER
+
         if (
           bet.name ===
           "Goals Over/Under"
@@ -261,16 +275,18 @@ async function getOdds(fixtureId) {
           for (const item of bet.values) {
 
             if (
-              item.value === "Over 2.5"
+              item.value ===
+              "Over 2.5"
             ) {
-              result.over25 =
+              odds.over25 =
                 item.odd;
             }
 
             if (
-              item.value === "Under 2.5"
+              item.value ===
+              "Under 2.5"
             ) {
-              result.under25 =
+              odds.under25 =
                 item.odd;
             }
 
@@ -279,6 +295,7 @@ async function getOdds(fixtureId) {
         }
 
         // BTTS
+
         if (
           bet.name ===
           "Both Teams Score"
@@ -286,13 +303,17 @@ async function getOdds(fixtureId) {
 
           for (const item of bet.values) {
 
-            if (item.value === "Yes") {
-              result.bttsYes =
+            if (
+              item.value === "Yes"
+            ) {
+              odds.bttsYes =
                 item.odd;
             }
 
-            if (item.value === "No") {
-              result.bttsNo =
+            if (
+              item.value === "No"
+            ) {
+              odds.bttsNo =
                 item.odd;
             }
 
@@ -304,7 +325,7 @@ async function getOdds(fixtureId) {
 
     }
 
-    return result;
+    return odds;
 
   } catch (err) {
 
@@ -323,7 +344,7 @@ async function getOdds(fixtureId) {
 }
 
 // ====================================================
-// PREDICTION
+// SMART PREDICTION
 // ====================================================
 
 function getPrediction(odds) {
@@ -337,15 +358,24 @@ function getPrediction(odds) {
   const btts =
     parseFloat(odds.bttsYes);
 
-  if (!isNaN(over) && over <= 1.70) {
-    return "🔥 OVER 2.5";
+  if (
+    !isNaN(over) &&
+    over <= 1.65
+  ) {
+    return "🔥 STRONG OVER 2.5";
   }
 
-  if (!isNaN(under) && under <= 1.70) {
-    return "🧊 UNDER 2.5";
+  if (
+    !isNaN(under) &&
+    under <= 1.65
+  ) {
+    return "🧊 STRONG UNDER 2.5";
   }
 
-  if (!isNaN(btts) && btts <= 1.70) {
+  if (
+    !isNaN(btts) &&
+    btts <= 1.70
+  ) {
     return "✅ BTTS YES";
   }
 
@@ -353,7 +383,7 @@ function getPrediction(odds) {
 }
 
 // ====================================================
-// GROUP DATE
+// GROUP MATCHES
 // ====================================================
 
 function groupMatches(matches) {
@@ -362,8 +392,9 @@ function groupMatches(matches) {
 
   matches.forEach((match) => {
 
-    const date = moment(match.date)
-      .format("YYYY-MM-DD");
+    const date =
+      moment(match.date)
+        .format("YYYY-MM-DD");
 
     if (!grouped[date]) {
       grouped[date] = [];
@@ -377,14 +408,18 @@ function groupMatches(matches) {
 }
 
 // ====================================================
-// FORMAT
+// FORMAT MATCH
 // ====================================================
 
-function formatMatch(match, odds) {
+function formatMatch(
+  match,
+  odds
+) {
 
-  const time = moment(match.date)
-    .tz("Asia/Jakarta")
-    .format("HH:mm");
+  const time =
+    moment(match.date)
+      .tz("Asia/Jakarta")
+      .format("HH:mm");
 
   return `
 🌍 ${match.country}
@@ -396,33 +431,38 @@ ${match.away}
 
 🕒 ${time}
 
-📊 O/U 2.5
-⬆️ ${odds.over25}
-⬇️ ${odds.under25}
+📊 OVER/UNDER 2.5
+⬆️ Over : ${odds.over25}
+⬇️ Under : ${odds.under25}
 
-📊 BTTS
-✅ ${odds.bttsYes}
-❌ ${odds.bttsNo}
+📊 BOTH TEAMS SCORE
+✅ Yes : ${odds.bttsYes}
+❌ No : ${odds.bttsNo}
 
 🎯 Prediction
 ${getPrediction(odds)}
 
-━━━━━━━━━━━━━━`;
+━━━━━━━━━━━━━━
+`;
 }
 
 // ====================================================
-// COMMAND START
+// START COMMAND
 // ====================================================
 
 bot.onText(/\/start/, async (msg) => {
 
-  bot.sendMessage(
+  await bot.sendMessage(
     msg.chat.id,
+
 `🤖 WORLD FOOTBALL BOT
 
 Commands:
+
 /match
-/status`
+/status
+
+Powered by API-Football`
   );
 
 });
@@ -433,30 +473,32 @@ Commands:
 
 bot.onText(/\/status/, async (msg) => {
 
-  bot.sendMessage(
+  await bot.sendMessage(
     msg.chat.id,
+
 `✅ BOT ONLINE
 
 🕒 ${moment().format(
-  "DD MMM YYYY HH:mm:ss"
+  "DD MMMM YYYY HH:mm:ss"
 )}
 
-🌍 API CONNECTED`
+🌍 API FOOTBALL CONNECTED`
   );
 
 });
 
 // ====================================================
-// MATCH
+// MATCH COMMAND
 // ====================================================
 
 bot.onText(/\/match/, async (msg) => {
 
-  const chatId = msg.chat.id;
+  const chatId =
+    msg.chat.id;
 
   await bot.sendMessage(
     chatId,
-    "🔄 Loading matches..."
+    "🔄 Loading football matches..."
   );
 
   try {
@@ -464,11 +506,13 @@ bot.onText(/\/match/, async (msg) => {
     const fixtures =
       await getFixtures();
 
-    if (fixtures.length === 0) {
+    if (
+      fixtures.length === 0
+    ) {
 
       return bot.sendMessage(
         chatId,
-        `❌ Tidak ada data pertandingan`
+        "❌ Tidak ada pertandingan ditemukan"
       );
 
     }
@@ -482,26 +526,33 @@ bot.onText(/\/match/, async (msg) => {
 `📅 ${moment(date).format(
   "DD MMMM YYYY"
 )}
-━━━━━━━━━━━━━━`;
 
+━━━━━━━━━━━━━━
+`;
+
+      // LIMIT AGAR TIDAK KENA RATE LIMIT
       const matches =
-        grouped[date].slice(0, 10);
+        grouped[date].slice(0, 5);
 
       for (const match of matches) {
 
         const odds =
-          await getOdds(match.fixtureId);
+          await getOdds(
+            match.fixtureId
+          );
 
         text += formatMatch(
           match,
           odds
         );
 
-        await delay(1000);
+        await delay(1200);
       }
 
       const chunks =
-        text.match(/[\s\S]{1,3500}/g);
+        text.match(
+          /[\s\S]{1,3500}/g
+        );
 
       for (const chunk of chunks) {
 
@@ -518,9 +569,10 @@ bot.onText(/\/match/, async (msg) => {
 
     console.log(err);
 
-    bot.sendMessage(
+    await bot.sendMessage(
       chatId,
-      `❌ BOT ERROR
+
+`❌ BOT ERROR
 
 ${err.message}`
     );
@@ -528,26 +580,34 @@ ${err.message}`
 });
 
 // ====================================================
-// ERROR HANDLER
+// POLLING ERROR
 // ====================================================
 
-bot.on("polling_error", (err) => {
+bot.on(
+  "polling_error",
+  (err) => {
 
-  console.log(
-    "❌ POLLING ERROR:",
-    err.message
-  );
+    console.log(
+      "❌ POLLING ERROR:",
+      err.message
+    );
 
-});
+  }
+);
+
+// ====================================================
+// GLOBAL ERROR
+// ====================================================
 
 process.on(
   "unhandledRejection",
   (err) => {
 
     console.log(
-      "❌ UNHANDLED:",
-      err
+      "❌ UNHANDLED REJECTION:"
     );
+
+    console.log(err);
 
   }
 );
@@ -557,12 +617,17 @@ process.on(
   (err) => {
 
     console.log(
-      "❌ UNCAUGHT:",
-      err
+      "❌ UNCAUGHT EXCEPTION:"
     );
+
+    console.log(err);
 
   }
 );
+
+// ====================================================
+// START LOG
+// ====================================================
 
 console.log(
   "🚀 WORLD FOOTBALL BOT RUNNING"
