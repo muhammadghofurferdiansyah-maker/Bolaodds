@@ -1,5 +1,5 @@
 {
-  "name": "football-bot",
+  "name": "predictz-bot",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.61.0",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12"
   }
 }
