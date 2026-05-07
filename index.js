@@ -1,34 +1,53 @@
 /*
 ====================================================
 ULTIMATE WORLD FOOTBALL BOT
-STABLE + RAILWAY READY + API FOOTBALL FIX
+TOP PREDICTION VERSION
 ====================================================
 */
 
 require("dotenv").config();
 
-const TelegramBot = require("node-telegram-bot-api");
-const axios = require("axios");
-const moment = require("moment-timezone");
+process.env.NTBA_FIX_350 = true;
+process.env.NTBA_FIX_319 = true;
 
-moment.tz.setDefault("Asia/Jakarta");
+const TelegramBot = require(
+  "node-telegram-bot-api"
+);
+
+const axios = require("axios");
+
+const moment = require(
+  "moment-timezone"
+);
+
+moment.tz.setDefault(
+  "Asia/Jakarta"
+);
 
 // ====================================================
-// ENV VALIDATION
+// ENV CHECK
 // ====================================================
 
 if (!process.env.BOT_TOKEN) {
-  console.log("❌ BOT_TOKEN NOT FOUND");
+  console.log(
+    "❌ BOT_TOKEN NOT FOUND"
+  );
+
   process.exit(1);
 }
 
-if (!process.env.FOOTBALL_API_KEY) {
-  console.log("❌ FOOTBALL_API_KEY NOT FOUND");
+if (
+  !process.env.FOOTBALL_API_KEY
+) {
+  console.log(
+    "❌ FOOTBALL_API_KEY NOT FOUND"
+  );
+
   process.exit(1);
 }
 
 // ====================================================
-// TELEGRAM BOT
+// TELEGRAM
 // ====================================================
 
 const bot = new TelegramBot(
@@ -38,34 +57,41 @@ const bot = new TelegramBot(
   }
 );
 
-console.log("✅ TELEGRAM CONNECTED");
+console.log(
+  "✅ TELEGRAM CONNECTED"
+);
 
 // ====================================================
-// API CONFIG
-// ====================================================
-
-const API_KEY = process.env.FOOTBALL_API_KEY;
-
-const API_BASE =
-  "https://v3.football.api-sports.io";
-
-// ====================================================
-// AXIOS INSTANCE
+// API
 // ====================================================
 
 const api = axios.create({
-  baseURL: API_BASE,
+  baseURL:
+    "https://v3.football.api-sports.io",
 
   timeout: 20000,
 
   headers: {
-    "x-apisports-key": API_KEY,
+    "x-apisports-key":
+      process.env
+        .FOOTBALL_API_KEY,
+
     Accept: "application/json",
   },
 });
 
 // ====================================================
-// SAFE DELAY
+// KEEP ALIVE
+// ====================================================
+
+setInterval(() => {
+  console.log(
+    "✅ BOT STILL RUNNING"
+  );
+}, 60000);
+
+// ====================================================
+// DELAY
 // ====================================================
 
 function delay(ms) {
@@ -82,48 +108,39 @@ async function safeGet(
   endpoint,
   retry = 3
 ) {
-  for (let i = 1; i <= retry; i++) {
+  for (
+    let i = 1;
+    i <= retry;
+    i++
+  ) {
     try {
 
       console.log(
-        `🌐 REQUEST: ${endpoint}`
+        `🌐 ${endpoint}`
       );
 
       const response =
         await api.get(endpoint);
-
-      if (!response.data) {
-        throw new Error(
-          "EMPTY RESPONSE"
-        );
-      }
-
-      console.log("✅ API SUCCESS");
 
       return response.data;
 
     } catch (err) {
 
       console.log(
-        `❌ API ERROR RETRY ${i}`
+        `❌ API ERROR ${i}`
       );
 
       if (err.response) {
 
         console.log(
-          "STATUS:",
           err.response.status
-        );
-
-        console.log(
-          JSON.stringify(
-            err.response.data
-          )
         );
 
       } else {
 
-        console.log(err.message);
+        console.log(
+          err.message
+        );
 
       }
 
@@ -131,20 +148,21 @@ async function safeGet(
         return null;
       }
 
-      await delay(2500);
+      await delay(3000);
     }
   }
 }
 
 // ====================================================
-// CURRENT SEASON
+// SEASON
 // ====================================================
 
 function getSeason() {
 
   const now = moment();
 
-  let season = now.year();
+  let season =
+    now.year();
 
   if (now.month() < 6) {
     season -= 1;
@@ -157,21 +175,24 @@ function getSeason() {
 // GET FIXTURES
 // ====================================================
 
-async function getFixtures() {
+async function getFixtures(
+  days = 1
+) {
 
   const from =
-    moment().format("YYYY-MM-DD");
+    moment().format(
+      "YYYY-MM-DD"
+    );
 
   const to =
     moment()
-      .add(7, "days")
-      .format("YYYY-MM-DD");
-
-  const season =
-    getSeason();
+      .add(days, "days")
+      .format(
+        "YYYY-MM-DD"
+      );
 
   const endpoint =
-    `/fixtures?season=${season}` +
+    `/fixtures?season=${getSeason()}` +
     `&from=${from}` +
     `&to=${to}` +
     `&timezone=Asia/Jakarta`;
@@ -186,37 +207,27 @@ async function getFixtures() {
     return [];
   }
 
-  console.log(
-    `✅ FIXTURES FOUND: ${data.response.length}`
-  );
-
   return data.response.map(
     (match) => ({
       fixtureId:
         match.fixture?.id,
 
       league:
-        match.league?.name ||
-        "Unknown League",
+        match.league?.name,
 
       country:
-        match.league?.country ||
-        "Unknown Country",
+        match.league?.country,
 
       home:
-        match.teams?.home?.name ||
-        "Home",
+        match.teams?.home
+          ?.name,
 
       away:
-        match.teams?.away?.name ||
-        "Away",
+        match.teams?.away
+          ?.name,
 
       date:
         match.fixture?.date,
-
-      status:
-        match.fixture?.status
-          ?.short || "NS",
     })
   );
 }
@@ -225,8 +236,9 @@ async function getFixtures() {
 // GET ODDS
 // ====================================================
 
-async function getOdds(fixtureId) {
-
+async function getOdds(
+  fixtureId
+) {
   try {
 
     const endpoint =
@@ -241,12 +253,7 @@ async function getOdds(fixtureId) {
       data.response.length === 0
     ) {
 
-      return {
-        over25: "-",
-        under25: "-",
-        bttsYes: "-",
-        bttsNo: "-",
-      };
+      return null;
 
     }
 
@@ -254,11 +261,10 @@ async function getOdds(fixtureId) {
       data.response[0]
         ?.bookmakers || [];
 
-    let odds = {
-      over25: "-",
-      under25: "-",
-      bttsYes: "-",
-      bttsNo: "-",
+    let result = {
+      over25: null,
+      under25: null,
+      bttsYes: null,
     };
 
     for (const bookmaker of bookmakers) {
@@ -278,16 +284,20 @@ async function getOdds(fixtureId) {
               item.value ===
               "Over 2.5"
             ) {
-              odds.over25 =
-                item.odd;
+              result.over25 =
+                parseFloat(
+                  item.odd
+                );
             }
 
             if (
               item.value ===
               "Under 2.5"
             ) {
-              odds.under25 =
-                item.odd;
+              result.under25 =
+                parseFloat(
+                  item.odd
+                );
             }
 
           }
@@ -304,17 +314,13 @@ async function getOdds(fixtureId) {
           for (const item of bet.values) {
 
             if (
-              item.value === "Yes"
+              item.value ===
+              "Yes"
             ) {
-              odds.bttsYes =
-                item.odd;
-            }
-
-            if (
-              item.value === "No"
-            ) {
-              odds.bttsNo =
-                item.odd;
+              result.bttsYes =
+                parseFloat(
+                  item.odd
+                );
             }
 
           }
@@ -325,101 +331,142 @@ async function getOdds(fixtureId) {
 
     }
 
-    return odds;
+    return result;
 
   } catch (err) {
 
     console.log(
-      "❌ ODDS ERROR:",
       err.message
     );
 
-    return {
-      over25: "-",
-      under25: "-",
-      bttsYes: "-",
-      bttsNo: "-",
-    };
+    return null;
   }
 }
 
 // ====================================================
-// SMART PREDICTION
+// PREDICTION ENGINE
 // ====================================================
 
-function getPrediction(odds) {
-
-  const over =
-    parseFloat(odds.over25);
-
-  const under =
-    parseFloat(odds.under25);
-
-  const btts =
-    parseFloat(odds.bttsYes);
-
-  if (
-    !isNaN(over) &&
-    over <= 1.65
-  ) {
-    return "🔥 STRONG OVER 2.5";
-  }
-
-  if (
-    !isNaN(under) &&
-    under <= 1.65
-  ) {
-    return "🧊 STRONG UNDER 2.5";
-  }
-
-  if (
-    !isNaN(btts) &&
-    btts <= 1.70
-  ) {
-    return "✅ BTTS YES";
-  }
-
-  return "⚖️ SAFE BET";
-}
-
-// ====================================================
-// GROUP MATCHES
-// ====================================================
-
-function groupMatches(matches) {
-
-  const grouped = {};
-
-  matches.forEach((match) => {
-
-    const date =
-      moment(match.date)
-        .format("YYYY-MM-DD");
-
-    if (!grouped[date]) {
-      grouped[date] = [];
-    }
-
-    grouped[date].push(match);
-
-  });
-
-  return grouped;
-}
-
-// ====================================================
-// FORMAT MATCH
-// ====================================================
-
-function formatMatch(
-  match,
+function getPrediction(
   odds
 ) {
 
-  const time =
-    moment(match.date)
-      .tz("Asia/Jakarta")
-      .format("HH:mm");
+  if (!odds) {
+    return null;
+  }
+
+  if (
+    odds.over25 &&
+    odds.over25 <= 1.65
+  ) {
+
+    return {
+      type:
+        "🔥 OVER 2.5",
+
+      score:
+        100 -
+        odds.over25 * 10,
+    };
+  }
+
+  if (
+    odds.under25 &&
+    odds.under25 <= 1.65
+  ) {
+
+    return {
+      type:
+        "🧊 UNDER 2.5",
+
+      score:
+        100 -
+        odds.under25 * 10,
+    };
+  }
+
+  if (
+    odds.bttsYes &&
+    odds.bttsYes <= 1.70
+  ) {
+
+    return {
+      type:
+        "✅ BTTS YES",
+
+      score:
+        100 -
+        odds.bttsYes * 10,
+    };
+  }
+
+  return null;
+}
+
+// ====================================================
+// TOP PREDICTIONS
+// ====================================================
+
+async function getTopPredictions(
+  days = 1
+) {
+
+  const fixtures =
+    await getFixtures(
+      days
+    );
+
+  let results = [];
+
+  for (const match of fixtures.slice(
+    0,
+    25
+  )) {
+
+    const odds =
+      await getOdds(
+        match.fixtureId
+      );
+
+    const prediction =
+      getPrediction(
+        odds
+      );
+
+    if (prediction) {
+
+      results.push({
+        ...match,
+
+        prediction:
+          prediction.type,
+
+        score:
+          prediction.score,
+
+        odds,
+      });
+
+    }
+
+    await delay(1000);
+  }
+
+  results.sort(
+    (a, b) =>
+      b.score - a.score
+  );
+
+  return results.slice(0, 10);
+}
+
+// ====================================================
+// FORMAT
+// ====================================================
+
+function formatPrediction(
+  match
+) {
 
   return `
 🌍 ${match.country}
@@ -429,52 +476,89 @@ function formatMatch(
 vs
 ${match.away}
 
-🕒 ${time}
+🕒 ${moment(
+  match.date
+)
+  .tz(
+    "Asia/Jakarta"
+  )
+  .format(
+    "DD MMM HH:mm"
+  )}
 
-📊 OVER/UNDER 2.5
-⬆️ Over : ${odds.over25}
-⬇️ Under : ${odds.under25}
+🎯 ${match.prediction}
 
-📊 BOTH TEAMS SCORE
-✅ Yes : ${odds.bttsYes}
-❌ No : ${odds.bttsNo}
-
-🎯 Prediction
-${getPrediction(odds)}
+📊 Odds
+⬆️ Over : ${match.odds.over25}
+⬇️ Under : ${match.odds.under25}
+✅ BTTS : ${match.odds.bttsYes}
 
 ━━━━━━━━━━━━━━
 `;
 }
 
 // ====================================================
-// START COMMAND
+// MENU
 // ====================================================
 
-bot.onText(/\/start/, async (msg) => {
+function mainMenu() {
 
-  await bot.sendMessage(
-    msg.chat.id,
+  return {
+    reply_markup: {
+      keyboard: [
+        [
+          "🔥 Prediksi Hari Ini",
+        ],
+
+        [
+          "📅 Prediksi Besok",
+        ],
+
+        [
+          "🌍 Top 1 Minggu",
+        ],
+
+        [
+          "📡 Status Bot",
+        ],
+      ],
+
+      resize_keyboard: true,
+    },
+  };
+}
+
+// ====================================================
+// START
+// ====================================================
+
+bot.onText(
+  /\/start/,
+  async (msg) => {
+
+    await bot.sendMessage(
+      msg.chat.id,
 
 `🤖 WORLD FOOTBALL BOT
 
-Commands:
+MENU PREDIKSI TERSEDIA 👇`,
 
-/match
-/status
+      mainMenu()
+    );
 
-Powered by API-Football`
-  );
-
-});
+  }
+);
 
 // ====================================================
 // STATUS
 // ====================================================
 
-bot.onText(/\/status/, async (msg) => {
+bot.onText(
+  /\/status/,
+  async (msg) => {
 
-  await bot.sendMessage(
-    msg.chat.id,
+    await bot.sendMessage(
+      msg.chat.id,
 
 `✅ BOT ONLINE
 
@@ -482,105 +566,181 @@ bot.onText(/\/status/, async (msg) => {
   "DD MMMM YYYY HH:mm:ss"
 )}
 
-🌍 API FOOTBALL CONNECTED`
-  );
+🌍 API CONNECTED`
+    );
 
-});
+  }
+);
 
 // ====================================================
-// MATCH COMMAND
+// TODAY
 // ====================================================
 
-bot.onText(/\/match/, async (msg) => {
+bot.on(
+  "message",
+  async (msg) => {
 
-  const chatId =
-    msg.chat.id;
+    const chatId =
+      msg.chat.id;
 
-  await bot.sendMessage(
-    chatId,
-    "🔄 Loading football matches..."
-  );
+    const text =
+      msg.text;
 
-  try {
-
-    const fixtures =
-      await getFixtures();
+    // TODAY
 
     if (
-      fixtures.length === 0
+      text ===
+      "🔥 Prediksi Hari Ini"
     ) {
 
-      return bot.sendMessage(
+      await bot.sendMessage(
         chatId,
-        "❌ Tidak ada pertandingan ditemukan"
+        "🔄 Loading top predictions today..."
       );
 
-    }
+      const matches =
+        await getTopPredictions(
+          1
+        );
 
-    const grouped =
-      groupMatches(fixtures);
+      if (
+        matches.length === 0
+      ) {
 
-    for (const date in grouped) {
+        return bot.sendMessage(
+          chatId,
+          "❌ Tidak ada prediksi"
+        );
 
-      let text =
-`📅 ${moment(date).format(
-  "DD MMMM YYYY"
-)}
+      }
+
+      let result =
+`🔥 TOP PREDIKSI HARI INI
 
 ━━━━━━━━━━━━━━
 `;
 
-      // LIMIT AGAR TIDAK KENA RATE LIMIT
-      const matches =
-        grouped[date].slice(0, 5);
+      matches.forEach(
+        (match) => {
 
-      for (const match of matches) {
+          result +=
+            formatPrediction(
+              match
+            );
 
-        const odds =
-          await getOdds(
-            match.fixtureId
-          );
+        }
+      );
 
-        text += formatMatch(
-          match,
-          odds
-        );
-
-        await delay(1200);
-      }
-
-      const chunks =
-        text.match(
-          /[\s\S]{1,3500}/g
-        );
-
-      for (const chunk of chunks) {
-
-        await bot.sendMessage(
-          chatId,
-          chunk
-        );
-
-      }
-
+      return bot.sendMessage(
+        chatId,
+        result
+      );
     }
 
-  } catch (err) {
+    // TOMORROW
 
-    console.log(err);
+    if (
+      text ===
+      "📅 Prediksi Besok"
+    ) {
 
-    await bot.sendMessage(
-      chatId,
+      await bot.sendMessage(
+        chatId,
+        "🔄 Loading predictions tomorrow..."
+      );
 
-`❌ BOT ERROR
+      const matches =
+        await getTopPredictions(
+          2
+        );
 
-${err.message}`
-    );
+      let result =
+`📅 TOP PREDIKSI BESOK
+
+━━━━━━━━━━━━━━
+`;
+
+      matches.forEach(
+        (match) => {
+
+          result +=
+            formatPrediction(
+              match
+            );
+
+        }
+      );
+
+      return bot.sendMessage(
+        chatId,
+        result
+      );
+    }
+
+    // WEEK
+
+    if (
+      text ===
+      "🌍 Top 1 Minggu"
+    ) {
+
+      await bot.sendMessage(
+        chatId,
+        "🔄 Loading weekly predictions..."
+      );
+
+      const matches =
+        await getTopPredictions(
+          7
+        );
+
+      let result =
+`🌍 TOP PREDIKSI 1 MINGGU
+
+━━━━━━━━━━━━━━
+`;
+
+      matches.forEach(
+        (match) => {
+
+          result +=
+            formatPrediction(
+              match
+            );
+
+        }
+      );
+
+      return bot.sendMessage(
+        chatId,
+        result
+      );
+    }
+
+    // STATUS
+
+    if (
+      text ===
+      "📡 Status Bot"
+    ) {
+
+      return bot.sendMessage(
+        chatId,
+
+`✅ BOT ONLINE
+
+🕒 ${moment().format(
+  "DD MMM YYYY HH:mm:ss"
+)}
+
+🌍 API READY`
+      );
+    }
   }
-});
+);
 
 // ====================================================
-// POLLING ERROR
+// ERROR
 // ====================================================
 
 bot.on(
@@ -588,24 +748,19 @@ bot.on(
   (err) => {
 
     console.log(
-      "❌ POLLING ERROR:",
+      "❌ POLLING ERROR"
+    );
+
+    console.log(
       err.message
     );
 
   }
 );
 
-// ====================================================
-// GLOBAL ERROR
-// ====================================================
-
 process.on(
   "unhandledRejection",
   (err) => {
-
-    console.log(
-      "❌ UNHANDLED REJECTION:"
-    );
 
     console.log(err);
 
@@ -616,18 +771,10 @@ process.on(
   "uncaughtException",
   (err) => {
 
-    console.log(
-      "❌ UNCAUGHT EXCEPTION:"
-    );
-
     console.log(err);
 
   }
 );
-
-// ====================================================
-// START LOG
-// ====================================================
 
 console.log(
   "🚀 WORLD FOOTBALL BOT RUNNING"
