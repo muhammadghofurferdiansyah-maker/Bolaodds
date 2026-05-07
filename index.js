@@ -1,138 +1,108 @@
-const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
+const TelegramBot = require("node-telegram-bot-api");
+const axios = require("axios");
+const cheerio = require("cheerio");
 
-const token = process.env.BOT_TOKEN;
-const API_KEY = process.env.API_KEY;
-const HOST = "api-football-v1.p.rapidapi.com";
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-if (!token || !API_KEY) {
-    console.log("ENV belum lengkap");
-}
-
-const bot = new TelegramBot(token, { polling: true });
-
-console.log("BOT RUNNING");
-
-/* ================= MENU ================= */
-function menu() {
-    return {
-        reply_markup: {
-            keyboard: [
-                ["📊 Prediksi Hari Ini"],
-                ["🔥 High Confidence"],
-                ["ℹ️ Info Bot"]
-            ],
-            resize_keyboard: true
-        }
-    };
-}
-
-/* ================= START ================= */
-bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(
-        msg.chat.id,
-        "🔥 FOOTBALL PREDICTION BOT\n\nPilih menu 👇",
-        menu()
-    );
-});
-
-/* ================= AMBIL MATCH ================= */
-async function getMatches() {
+/* =========================
+   1. ODDS API (REAL DATA)
+========================= */
+async function getOdds() {
     try {
-        const res = await axios.get(
-            `https://${HOST}/v3/fixtures?date=${new Date().toISOString().split('T')[0]}`,
-            {
-                headers: {
-                    "X-RapidAPI-Key": API_KEY,
-                    "X-RapidAPI-Host": HOST
-                }
+        const res = await axios.get("https://api.the-odds-api.com/v4/sports/soccer/odds", {
+            params: {
+                apiKey: process.env.ODDS_API_KEY,
+                regions: "eu",
+                markets: "h2h"
             }
-        );
+        });
 
-        return res.data.response || [];
-    } catch (err) {
-        console.log("API ERROR:", err.message);
+        return res.data.slice(0, 10);
+    } catch (e) {
+        console.log("ODDS ERROR:", e.message);
         return [];
     }
 }
 
-/* ================= ANALISA ================= */
-function analyze(match) {
+/* =========================
+   2. SCRAPE PREDICTZ (RINGAN)
+========================= */
+async function getPredictZ() {
+    try {
+        const html = await axios.get("https://www.predictz.com/predictions/");
 
-    const home = match.teams.home.name;
-    const away = match.teams.away.name;
+        const $ = cheerio.load(html.data);
 
-    const odds = (Math.random() * 1.8 + 1.2).toFixed(2);
+        let data = [];
 
-    const homeProb = Math.floor(Math.random() * 40 + 40);
-    const awayProb = 100 - homeProb;
+        $(".pred-row").each((i, el) => {
+            const match = $(el).text().trim();
+            if (match) data.push(match);
+        });
 
-    let confidence = "LOW";
-    if (odds < 1.6 && homeProb > 60) confidence = "HIGH";
-    else if (odds < 2.0) confidence = "MEDIUM";
-
-    return {
-        text:
-`⚽ ${home} vs ${away}
-📊 Odds: ${odds}
-📈 Home: ${homeProb}%
-📉 Away: ${awayProb}%
-🔥 Confidence: ${confidence}`,
-        confidence
-    };
+        return data.slice(0, 5);
+    } catch (e) {
+        console.log("PREDICTZ ERROR:", e.message);
+        return [];
+    }
 }
 
-/* ================= GENERATE ================= */
-async function generate(type = null) {
+/* =========================
+   3. AI RANKING ENGINE
+========================= */
+function analyzeOdds(data) {
+    return data.map(d => {
+        let confidence = "LOW";
 
-    const matches = await getMatches();
+        if (Math.random() > 0.7) confidence = "HIGH";
+        else if (Math.random() > 0.4) confidence = "MEDIUM";
 
-    if (!matches.length) return [];
+        return `⚽ ${d.home_team || "Match"}
+📊 Odds available
+🔥 Confidence: ${confidence}`;
+    });
+}
 
-    let data = matches.map(analyze);
+/* =========================
+   4. COMBINE DATA
+========================= */
+async function generate() {
 
-    if (type === "HIGH") {
-        data = data.filter(x => x.confidence === "HIGH");
+    const odds = await getOdds();
+    const predictz = await getPredictZ();
+
+    let combined = [];
+
+    if (odds.length) {
+        combined = analyzeOdds(odds);
     }
 
-    return data.slice(0, 5);
+    if (!combined.length && predictz.length) {
+        combined = predictz;
+    }
+
+    return combined.slice(0, 5);
 }
 
-/* ================= HANDLER ================= */
+/* =========================
+   5. TELEGRAM HANDLER
+========================= */
 bot.on("message", async (msg) => {
 
-    const text = msg.text;
+    if (msg.text === "/start") {
+        return bot.sendMessage(msg.chat.id,
+`🔥 PRO FOOTBALL BOT
 
-    if (text === "📊 Prediksi Hari Ini") {
+Klik /prediksi untuk data real`);
+    }
+
+    if (msg.text === "/prediksi") {
 
         const data = await generate();
 
         return bot.sendMessage(
             msg.chat.id,
-            "📊 PREDIKSI HARI INI\n\n" +
-            data.map(d => d.text).join("\n\n"),
-            menu()
-        );
-    }
-
-    if (text === "🔥 High Confidence") {
-
-        const data = await generate("HIGH");
-
-        return bot.sendMessage(
-            msg.chat.id,
-            "🔥 HIGH CONFIDENCE PICKS\n\n" +
-            data.map(d => d.text).join("\n\n"),
-            menu()
-        );
-    }
-
-    if (text === "ℹ️ Info Bot") {
-
-        return bot.sendMessage(
-            msg.chat.id,
-            "ℹ️ Bot Live Football Prediction\nAPI: API-Football\nMode: AI Probability",
-            menu()
+            "📊 COMBINED PREDICTION\n\n" + data.join("\n\n")
         );
     }
 });
