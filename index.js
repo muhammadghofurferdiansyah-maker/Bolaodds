@@ -4,105 +4,105 @@ const cheerio = require("cheerio");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-/* =========================
-   1. ODDS API (REAL DATA)
-========================= */
-async function getOdds() {
+console.log("BOT RUNNING - PREDICTZ MODE");
+
+/* ================= MENU ================= */
+function menu() {
+    return {
+        reply_markup: {
+            keyboard: [
+                ["📊 Prediksi Hari Ini"],
+                ["ℹ️ Info Bot"]
+            ],
+            resize_keyboard: true
+        }
+    };
+}
+
+/* ================= START ================= */
+bot.onText(/\/start/, (msg) => {
+    bot.sendMessage(
+        msg.chat.id,
+        "⚽ PredictZ Football Bot\nPilih menu 👇",
+        menu()
+    );
+});
+
+/* ================= SCRAPE PREDICTZ ================= */
+async function getPredictZ() {
     try {
-        const res = await axios.get("https://api.the-odds-api.com/v4/sports/soccer/odds", {
-            params: {
-                apiKey: process.env.ODDS_API_KEY,
-                regions: "eu",
-                markets: "h2h"
+        const url = "https://www.predictz.com/predictions/";
+
+        const res = await axios.get(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0"
+            },
+            timeout: 10000
+        });
+
+        const $ = cheerio.load(res.data);
+
+        let matches = [];
+
+        // ambil item prediksi (struktur bisa berubah, jadi dibuat fleksibel)
+        $("tr").each((i, el) => {
+            const text = $(el).text().replace(/\s+/g, " ").trim();
+
+            if (text && text.length > 20 && text.includes("vs")) {
+                matches.push(text);
             }
         });
 
-        return res.data.slice(0, 10);
-    } catch (e) {
-        console.log("ODDS ERROR:", e.message);
+        return matches.slice(0, 10);
+
+    } catch (err) {
+        console.log("SCRAPE ERROR:", err.message);
         return [];
     }
 }
 
-/* =========================
-   2. SCRAPE PREDICTZ (RINGAN)
-========================= */
-async function getPredictZ() {
-    try {
-        const html = await axios.get("https://www.predictz.com/predictions/");
+/* ================= ANALISIS SIMPLE ================= */
+function analyze(matches) {
 
-        const $ = cheerio.load(html.data);
-
-        let data = [];
-
-        $(".pred-row").each((i, el) => {
-            const match = $(el).text().trim();
-            if (match) data.push(match);
-        });
-
-        return data.slice(0, 5);
-    } catch (e) {
-        console.log("PREDICTZ ERROR:", e.message);
-        return [];
+    if (!matches.length) {
+        return ["❌ Data PredictZ tidak tersedia saat ini"];
     }
-}
 
-/* =========================
-   3. AI RANKING ENGINE
-========================= */
-function analyzeOdds(data) {
-    return data.map(d => {
-        let confidence = "LOW";
+    return matches.slice(0, 5).map(m => {
 
-        if (Math.random() > 0.7) confidence = "HIGH";
-        else if (Math.random() > 0.4) confidence = "MEDIUM";
+        const confidence = Math.random();
 
-        return `⚽ ${d.home_team || "Match"}
-📊 Odds available
-🔥 Confidence: ${confidence}`;
+        let level = "LOW";
+        if (confidence > 0.7) level = "HIGH";
+        else if (confidence > 0.4) level = "MEDIUM";
+
+        return `⚽ ${m}
+🔥 Confidence: ${level}`;
     });
 }
 
-/* =========================
-   4. COMBINE DATA
-========================= */
-async function generate() {
-
-    const odds = await getOdds();
-    const predictz = await getPredictZ();
-
-    let combined = [];
-
-    if (odds.length) {
-        combined = analyzeOdds(odds);
-    }
-
-    if (!combined.length && predictz.length) {
-        combined = predictz;
-    }
-
-    return combined.slice(0, 5);
-}
-
-/* =========================
-   5. TELEGRAM HANDLER
-========================= */
+/* ================= HANDLER ================= */
 bot.on("message", async (msg) => {
 
-    if (msg.text === "/start") {
-        return bot.sendMessage(msg.chat.id,
-`🔥 PRO FOOTBALL BOT
+    const text = msg.text;
 
-Klik /prediksi untuk data real`);
-    }
+    if (text === "📊 Prediksi Hari Ini") {
 
-    if (msg.text === "/prediksi") {
-
-        const data = await generate();
+        const data = await getPredictZ();
+        const result = analyze(data);
 
         return bot.sendMessage(
             msg.chat.id,
-            "📊 COMBINED PREDICTION\n\n" + data.join("\n\n")
+            "📊 PREDIKSI PREDICTZ\n\n" + result.join("\n\n"),
+            menu()
+        );
+    }
+
+    if (text === "ℹ️ Info Bot") {
+        return bot.sendMessage(
+            msg.chat.id,
+            "⚽ Bot ini menggunakan PredictZ sebagai sumber prediksi.\nMode: Single Source Stable",
+            menu()
         );
     }
 });
