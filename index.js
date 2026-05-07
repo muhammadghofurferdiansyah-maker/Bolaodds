@@ -1,23 +1,8 @@
 /*
-========================================================
- WORLD FOOTBALL TELEGRAM BOT
-========================================================
-
-FITUR:
-✅ Semua liga dunia otomatis
-✅ Jadwal harian
-✅ Max 10 match per hari
-✅ Odds Over/Under
-✅ BTTS
-✅ Prediksi Corner
-✅ Best Prediction
-✅ Anti crash
-✅ Anti API limit
-✅ Retry otomatis
-✅ Railway ready
-✅ Timezone Indonesia
-✅ Auto season fix
-========================================================
+====================================================
+ STABLE WORLD FOOTBALL BOT
+ FIX ALL API ISSUES
+====================================================
 */
 
 require("dotenv").config();
@@ -28,56 +13,107 @@ const moment = require("moment-timezone");
 
 moment.tz.setDefault("Asia/Jakarta");
 
-// =====================================================
+// ====================================================
+// VALIDATE ENV
+// ====================================================
+
+if (!process.env.BOT_TOKEN) {
+  console.log("❌ BOT_TOKEN NOT FOUND");
+  process.exit(1);
+}
+
+if (!process.env.FOOTBALL_API_KEY) {
+  console.log("❌ FOOTBALL_API_KEY NOT FOUND");
+  process.exit(1);
+}
+
+// ====================================================
 // TELEGRAM
-// =====================================================
+// ====================================================
 
-const bot = new TelegramBot(process.env.BOT_TOKEN, {
-  polling: true,
-});
+const bot = new TelegramBot(
+  process.env.BOT_TOKEN,
+  {
+    polling: {
+      interval: 300,
+      autoStart: true,
+      params: {
+        timeout: 10,
+      },
+    },
+  }
+);
 
-// =====================================================
+// ====================================================
 // API CONFIG
-// =====================================================
+// ====================================================
 
 const API_KEY = process.env.FOOTBALL_API_KEY;
 
-const API_HOST = "v3.football.api-sports.io";
+const API_BASE =
+  "https://v3.football.api-sports.io";
 
-const HEADERS = {
-  "x-apisports-key": API_KEY,
-  "x-rapidapi-host": API_HOST,
-};
+// ====================================================
+// AXIOS INSTANCE
+// ====================================================
 
-// =====================================================
+const api = axios.create({
+  baseURL: API_BASE,
+
+  timeout: 20000,
+
+  headers: {
+    "x-apisports-key": API_KEY,
+    Accept: "application/json",
+  },
+});
+
+// ====================================================
 // SAFE REQUEST
-// =====================================================
+// ====================================================
 
-async function safeRequest(url, retries = 3) {
+async function safeGet(url, retry = 3) {
 
-  for (let i = 1; i <= retries; i++) {
+  for (let i = 1; i <= retry; i++) {
 
     try {
 
-      const response = await axios.get(url, {
-        headers: HEADERS,
-        timeout: 20000,
-      });
+      console.log(`🌐 REQUEST: ${url}`);
+
+      const response = await api.get(url);
+
+      // LOG RESPONSE
+      console.log("✅ API CONNECTED");
+
+      if (!response.data) {
+        throw new Error("EMPTY RESPONSE");
+      }
 
       return response.data;
 
     } catch (err) {
 
-      console.log(`❌ REQUEST ERROR ${i}`);
+      console.log(`❌ API ERROR ${i}`);
 
       if (err.response) {
-        console.log(err.response.status);
-        console.log(err.response.data);
+
+        console.log(
+          "STATUS:",
+          err.response.status
+        );
+
+        console.log(
+          "DATA:",
+          JSON.stringify(err.response.data)
+        );
+
       } else {
+
         console.log(err.message);
+
       }
 
-      if (i === retries) {
+      if (i === retry) {
         return null;
       }
 
@@ -86,27 +122,23 @@ async function safeRequest(url, retries = 3) {
   }
 }
 
-// =====================================================
+// ====================================================
 // DELAY
-// =====================================================
+// ====================================================
 
 function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-// =====================================================
+// ====================================================
 // SAFE SEASON
-// =====================================================
+// ====================================================
 
 function getSeason() {
 
   const now = moment();
 
   let year = now.year();
-
-  /*
-    Anti season bug 2026
-  */
 
   if (now.month() < 6) {
     year -= 1;
@@ -115,114 +147,131 @@ function getSeason() {
   return year;
 }
 
-// =====================================================
-// GET ALL FIXTURES WORLD
-// =====================================================
+// ====================================================
+// GET FIXTURES
+// ====================================================
 
-async function getWorldFixtures() {
+async function getFixtures() {
 
-  const from = moment().format("YYYY-MM-DD");
+  const from =
+    moment().format("YYYY-MM-DD");
 
-  const to = moment()
-    .add(7, "days")
-    .format("YYYY-MM-DD");
+  const to =
+    moment()
+      .add(7, "days")
+      .format("YYYY-MM-DD");
 
   const season = getSeason();
 
-  /*
-    Endpoint tanpa league
-    = semua pertandingan dunia
-  */
-
-  const url =
-    `https://${API_HOST}/fixtures` +
-    `?season=${season}` +
+  const endpoint =
+    `/fixtures?season=${season}` +
     `&from=${from}` +
     `&to=${to}`;
 
-  console.log("================================");
-  console.log("🌍 WORLD FIXTURES");
-  console.log("FROM:", from);
-  console.log("TO:", to);
-  console.log("SEASON:", season);
-  console.log("================================");
+  const data = await safeGet(endpoint);
 
-  const data = await safeRequest(url);
-
-  if (!data || !data.response) {
+  if (!data) {
     return [];
   }
 
-  const fixtures = [];
+  if (data.errors) {
 
-  data.response.forEach((match) => {
+    console.log("❌ API ERRORS");
+    console.log(data.errors);
 
-    fixtures.push({
-      fixtureId: match.fixture.id,
+  }
 
-      league: match.league.name,
+  if (!data.response) {
+    return [];
+  }
 
-      country: match.league.country,
+  console.log(
+    `✅ FIXTURES: ${data.response.length}`
+  );
 
-      home: match.teams.home.name,
+  return data.response.map((match) => ({
+    fixtureId: match.fixture.id,
 
-      away: match.teams.away.name,
+    league:
+      match.league?.name || "Unknown",
 
-      date: match.fixture.date,
-    });
+    country:
+      match.league?.country || "Unknown",
 
-  });
+    home:
+      match.teams?.home?.name || "Home",
 
-  return fixtures;
+    away:
+      match.teams?.away?.name || "Away",
+
+    date:
+      match.fixture?.date || null,
+  }));
 }
 
-// =====================================================
+// ====================================================
 // GET ODDS
-// =====================================================
+// ====================================================
 
 async function getOdds(fixtureId) {
 
   try {
 
-    const url =
-      `https://${API_HOST}/odds` +
-      `?fixture=${fixtureId}`;
+    const endpoint =
+      `/odds?fixture=${fixtureId}`;
 
-    const data = await safeRequest(url);
+    const data =
+      await safeGet(endpoint);
 
     if (
       !data ||
       !data.response ||
       data.response.length === 0
     ) {
-      return null;
+
+      return {
+        over25: "-",
+        under25: "-",
+        bttsYes: "-",
+        bttsNo: "-",
+      };
+
     }
 
     const bookmakers =
-      data.response[0].bookmakers || [];
+      data.response[0]?.bookmakers || [];
 
-    let odds = {
+    let result = {
       over25: "-",
       under25: "-",
       bttsYes: "-",
       bttsNo: "-",
     };
 
-    for (const bookie of bookmakers) {
+    for (const bookmaker of bookmakers) {
 
-      for (const bet of bookie.bets) {
+      for (const bet of bookmaker.bets) {
 
         // OVER UNDER
-        if (bet.name === "Goals Over/Under") {
+        if (
+          bet.name ===
+          "Goals Over/Under"
+        ) {
 
-          for (const value of bet.values) {
+          for (const item of bet.values) {
 
-            if (value.value === "Over 2.5") {
-              odds.over25 = value.odd;
+            if (
+              item.value === "Over 2.5"
+            ) {
+              result.over25 =
+                item.odd;
             }
 
-            if (value.value === "Under 2.5") {
-              odds.under25 = value.odd;
+            if (
+              item.value === "Under 2.5"
+            ) {
+              result.under25 =
+                item.odd;
             }
 
           }
@@ -230,16 +279,21 @@ async function getOdds(fixtureId) {
         }
 
         // BTTS
-        if (bet.name === "Both Teams Score") {
+        if (
+          bet.name ===
+          "Both Teams Score"
+        ) {
 
-          for (const value of bet.values) {
+          for (const item of bet.values) {
 
-            if (value.value === "Yes") {
-              odds.bttsYes = value.odd;
+            if (item.value === "Yes") {
+              result.bttsYes =
+                item.odd;
             }
 
-            if (value.value === "No") {
-              odds.bttsNo = value.odd;
+            if (item.value === "No") {
+              result.bttsNo =
+                item.odd;
             }
 
           }
@@ -250,57 +304,38 @@ async function getOdds(fixtureId) {
 
     }
 
-    return odds;
+    return result;
 
   } catch (err) {
 
-    console.log("ODDS ERROR:", err.message);
+    console.log(
+      "❌ ODDS ERROR:",
+      err.message
+    );
 
-    return null;
+    return {
+      over25: "-",
+      under25: "-",
+      bttsYes: "-",
+      bttsNo: "-",
+    };
   }
 }
 
-// =====================================================
-// CORNER PREDICTION
-// =====================================================
+// ====================================================
+// PREDICTION
+// ====================================================
 
-function predictCorner(home, away) {
+function getPrediction(odds) {
 
-  const attackingTeams = [
-    "Manchester City",
-    "Liverpool",
-    "Arsenal",
-    "Barcelona",
-    "Real Madrid",
-    "Bayern Munich",
-    "PSG",
-    "Inter",
-    "Juventus",
-  ];
+  const over =
+    parseFloat(odds.over25);
 
-  let total = 8;
+  const under =
+    parseFloat(odds.under25);
 
-  if (attackingTeams.includes(home)) total += 2;
-  if (attackingTeams.includes(away)) total += 2;
-
-  return `${total}-${total + 2}`;
-}
-
-// =====================================================
-// BEST PREDICTION
-// =====================================================
-
-function getBestPrediction(odds) {
-
-  if (!odds) {
-    return "⚠️ No odds";
-  }
-
-  const over = parseFloat(odds.over25);
-
-  const under = parseFloat(odds.under25);
-
-  const btts = parseFloat(odds.bttsYes);
+  const btts =
+    parseFloat(odds.bttsYes);
 
   if (!isNaN(over) && over <= 1.70) {
     return "🔥 OVER 2.5";
@@ -310,25 +345,24 @@ function getBestPrediction(odds) {
     return "🧊 UNDER 2.5";
   }
 
-  if (!isNaN(btts) && btts <= 1.65) {
+  if (!isNaN(btts) && btts <= 1.70) {
     return "✅ BTTS YES";
   }
 
   return "⚖️ SAFE BET";
 }
 
-// =====================================================
-// GROUP PER DAY
-// =====================================================
+// ====================================================
+// GROUP DATE
+// ====================================================
 
-function groupByDate(matches) {
+function groupMatches(matches) {
 
   const grouped = {};
 
   matches.forEach((match) => {
 
     const date = moment(match.date)
-      .tz("Asia/Jakarta")
       .format("YYYY-MM-DD");
 
     if (!grouped[date]) {
@@ -342,9 +376,9 @@ function groupByDate(matches) {
   return grouped;
 }
 
-// =====================================================
-// FORMAT MATCH
-// =====================================================
+// ====================================================
+// FORMAT
+// ====================================================
 
 function formatMatch(match, odds) {
 
@@ -362,109 +396,23 @@ ${match.away}
 
 🕒 ${time}
 
-📊 OVER/UNDER 2.5
-⬆️ ${odds?.over25 || "-"}
-⬇️ ${odds?.under25 || "-"}
+📊 O/U 2.5
+⬆️ ${odds.over25}
+⬇️ ${odds.under25}
 
 📊 BTTS
-✅ ${odds?.bttsYes || "-"}
-❌ ${odds?.bttsNo || "-"}
+✅ ${odds.bttsYes}
+❌ ${odds.bttsNo}
 
-🚩 Corner
-📈 ${predictCorner(match.home, match.away)}
-
-🎯 Best Prediction
-${getBestPrediction(odds)}
+🎯 Prediction
+${getPrediction(odds)}
 
 ━━━━━━━━━━━━━━`;
 }
 
-// =====================================================
-// COMMAND MATCH
-// =====================================================
-
-bot.onText(/\/match/, async (msg) => {
-
-  const chatId = msg.chat.id;
-
-  await bot.sendMessage(
-    chatId,
-    "🌍 Mengambil pertandingan seluruh dunia..."
-  );
-
-  try {
-
-    const fixtures = await getWorldFixtures();
-
-    if (!fixtures || fixtures.length === 0) {
-
-      return bot.sendMessage(
-        chatId,
-        `❌ Tidak ada pertandingan ditemukan`
-      );
-
-    }
-
-    const grouped = groupByDate(fixtures);
-
-    for (const date in grouped) {
-
-      let text =
-`📅 ${moment(date).format("DD MMMM YYYY")}
-━━━━━━━━━━━━━━`;
-
-      /*
-        Max 10 match per hari
-      */
-
-      const dailyMatches =
-        grouped[date].slice(0, 10);
-
-      for (const match of dailyMatches) {
-
-        console.log(
-          `⚽ ${match.home} vs ${match.away}`
-        );
-
-        const odds =
-          await getOdds(match.fixtureId);
-
-        text += formatMatch(match, odds);
-
-        await delay(1200);
-      }
-
-      /*
-        Telegram safe limit
-      */
-
-      const chunks =
-        text.match(/[\s\S]{1,3500}/g);
-
-      for (const chunk of chunks) {
-
-        await bot.sendMessage(chatId, chunk);
-
-      }
-
-    }
-
-  } catch (err) {
-
-    console.log(err.message);
-
-    bot.sendMessage(
-      chatId,
-      `❌ Error
-
-${err.message}`
-    );
-  }
-});
-
-// =====================================================
-// START
-// =====================================================
+// ====================================================
+// COMMAND START
+// ====================================================
 
 bot.onText(/\/start/, async (msg) => {
 
@@ -473,15 +421,15 @@ bot.onText(/\/start/, async (msg) => {
 `🤖 WORLD FOOTBALL BOT
 
 Commands:
-/match → semua pertandingan dunia
-/status → status bot`
+/match
+/status`
   );
 
 });
 
-// =====================================================
+// ====================================================
 // STATUS
-// =====================================================
+// ====================================================
 
 bot.onText(/\/status/, async (msg) => {
 
@@ -489,28 +437,133 @@ bot.onText(/\/status/, async (msg) => {
     msg.chat.id,
 `✅ BOT ONLINE
 
-🕒 ${moment().format("DD MMM YYYY HH:mm:ss")}
-🌍 Asia/Jakarta`
+🕒 ${moment().format(
+  "DD MMM YYYY HH:mm:ss"
+)}
+
+🌍 API CONNECTED`
   );
 
 });
 
-// =====================================================
-// GLOBAL ERROR
-// =====================================================
+// ====================================================
+// MATCH
+// ====================================================
 
-process.on("unhandledRejection", (err) => {
+bot.onText(/\/match/, async (msg) => {
 
-  console.log("UNHANDLED REJECTION");
-  console.log(err);
+  const chatId = msg.chat.id;
+
+  await bot.sendMessage(
+    chatId,
+    "🔄 Loading matches..."
+  );
+
+  try {
+
+    const fixtures =
+      await getFixtures();
+
+    if (fixtures.length === 0) {
+
+      return bot.sendMessage(
+        chatId,
+        `❌ Tidak ada data pertandingan`
+      );
+
+    }
+
+    const grouped =
+      groupMatches(fixtures);
+
+    for (const date in grouped) {
+
+      let text =
+`📅 ${moment(date).format(
+  "DD MMMM YYYY"
+)}
+━━━━━━━━━━━━━━`;
+
+      const matches =
+        grouped[date].slice(0, 10);
+
+      for (const match of matches) {
+
+        const odds =
+          await getOdds(match.fixtureId);
+
+        text += formatMatch(
+          match,
+          odds
+        );
+
+        await delay(1000);
+      }
+
+      const chunks =
+        text.match(/[\s\S]{1,3500}/g);
+
+      for (const chunk of chunks) {
+
+        await bot.sendMessage(
+          chatId,
+          chunk
+        );
+
+      }
+
+    }
+
+  } catch (err) {
+
+    console.log(err);
+
+    bot.sendMessage(
+      chatId,
+      `❌ BOT ERROR
+
+${err.message}`
+    );
+  }
+});
+
+// ====================================================
+// ERROR HANDLER
+// ====================================================
+
+bot.on("polling_error", (err) => {
+
+  console.log(
+    "❌ POLLING ERROR:",
+    err.message
+  );
 
 });
 
-process.on("uncaughtException", (err) => {
+process.on(
+  "unhandledRejection",
+  (err) => {
 
-  console.log("UNCAUGHT EXCEPTION");
-  console.log(err);
+    console.log(
+      "❌ UNHANDLED:",
+      err
+    );
 
-});
+  }
+);
 
-console.log("🚀 WORLD FOOTBALL BOT RUNNING...");
+process.on(
+  "uncaughtException",
+  (err) => {
+
+    console.log(
+      "❌ UNCAUGHT:",
+      err
+    );
+
+  }
+);
+
+console.log(
+  "🚀 WORLD FOOTBALL BOT RUNNING"
+);
