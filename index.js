@@ -1,108 +1,89 @@
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
-const cheerio = require("cheerio");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-console.log("BOT RUNNING - PREDICTZ MODE");
+console.log("REAL TIME BOT ACTIVE");
 
-/* ================= MENU ================= */
-function menu() {
-    return {
-        reply_markup: {
-            keyboard: [
-                ["📊 Prediksi Hari Ini"],
-                ["ℹ️ Info Bot"]
-            ],
-            resize_keyboard: true
-        }
-    };
-}
-
-/* ================= START ================= */
-bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(
-        msg.chat.id,
-        "⚽ PredictZ Football Bot\nPilih menu 👇",
-        menu()
-    );
-});
-
-/* ================= SCRAPE PREDICTZ ================= */
-async function getPredictZ() {
+/* ================= GET REAL MATCHES TODAY ================= */
+async function getMatches() {
     try {
-        const url = "https://www.predictz.com/predictions/";
+        const today = new Date().toISOString().split("T")[0];
 
-        const res = await axios.get(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            },
-            timeout: 10000
-        });
-
-        const $ = cheerio.load(res.data);
-
-        let matches = [];
-
-        // ambil item prediksi (struktur bisa berubah, jadi dibuat fleksibel)
-        $("tr").each((i, el) => {
-            const text = $(el).text().replace(/\s+/g, " ").trim();
-
-            if (text && text.length > 20 && text.includes("vs")) {
-                matches.push(text);
+        const res = await axios.get(
+            `https://api.football-data.org/v4/matches?dateFrom=${today}&dateTo=${today}`,
+            {
+                headers: {
+                    "X-Auth-Token": process.env.FOOTBALL_API_KEY
+                },
+                timeout: 10000
             }
-        });
+        );
 
-        return matches.slice(0, 10);
+        // ambil max 10 match real hari ini
+        return (res.data.matches || []).slice(0, 10);
 
     } catch (err) {
-        console.log("SCRAPE ERROR:", err.message);
+        console.log("API ERROR:", err.message);
         return [];
     }
 }
 
-/* ================= ANALISIS SIMPLE ================= */
-function analyze(matches) {
+/* ================= MARKET GENERATOR ================= */
+function buildMarket(match) {
 
-    if (!matches.length) {
-        return ["❌ Data PredictZ tidak tersedia saat ini"];
-    }
+    const home = match.homeTeam?.name || "Home";
+    const away = match.awayTeam?.name || "Away";
 
-    return matches.slice(0, 5).map(m => {
+    // probabilitas AI (simulasi market)
+    const homeWin = Math.floor(Math.random() * 40 + 40);
+    const draw = Math.floor(Math.random() * 20);
+    const awayWin = 100 - homeWin - draw;
 
-        const confidence = Math.random();
+    const btts = Math.random() > 0.5 ? "YES" : "NO";
+    const over25 = Math.random() > 0.5 ? "OVER 2.5" : "UNDER 2.5";
 
-        let level = "LOW";
-        if (confidence > 0.7) level = "HIGH";
-        else if (confidence > 0.4) level = "MEDIUM";
+    const score = `${Math.floor(Math.random() * 3)}-${Math.floor(Math.random() * 2)}`;
+    const corners = Math.floor(Math.random() * 6 + 8);
 
-        return `⚽ ${m}
-🔥 Confidence: ${level}`;
-    });
+    return `⚽ ${home} vs ${away}
+
+📊 1X2:
+Home ${homeWin}% | Draw ${draw}% | Away ${awayWin}%
+
+🎯 BTTS: ${btts}
+📈 Goals: ${over25}
+⚽ Score: ${score}
+🚩 Corners: ${corners}+`;
 }
 
-/* ================= HANDLER ================= */
-bot.on("message", async (msg) => {
+/* ================= GENERATE ================= */
+async function generate() {
 
-    const text = msg.text;
+    const matches = await getMatches();
 
-    if (text === "📊 Prediksi Hari Ini") {
-
-        const data = await getPredictZ();
-        const result = analyze(data);
-
-        return bot.sendMessage(
-            msg.chat.id,
-            "📊 PREDIKSI PREDICTZ\n\n" + result.join("\n\n"),
-            menu()
-        );
+    if (!matches.length) {
+        return ["❌ Tidak ada match hari ini (API limit / belum update)"];
     }
 
-    if (text === "ℹ️ Info Bot") {
-        return bot.sendMessage(
-            msg.chat.id,
-            "⚽ Bot ini menggunakan PredictZ sebagai sumber prediksi.\nMode: Single Source Stable",
-            menu()
-        );
-    }
+    return matches.map(buildMarket);
+}
+
+/* ================= BOT ================= */
+bot.onText(/\/start/, (msg) => {
+    bot.sendMessage(msg.chat.id,
+`⚽ REAL TIME FOOTBALL BOT
+
+Data live 1–10 match per hari`);
+});
+
+bot.onText(/\/prediksi/, async (msg) => {
+
+    const data = await generate();
+
+    bot.sendMessage(
+        msg.chat.id,
+        "📊 LIVE MATCH TODAY (REAL TIME)\n\n" +
+        data.join("\n\n")
+    );
 });
