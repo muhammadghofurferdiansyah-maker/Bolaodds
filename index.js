@@ -1,36 +1,61 @@
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
 
-/* ===================================
-   ENV CHECK
-=================================== */
+/* =====================================
+   ENV VALIDATION
+===================================== */
 
-if (!process.env.BOT_TOKEN) {
+const BOT_TOKEN =
+    process.env.BOT_TOKEN;
+
+const API_KEY =
+    process.env.API_FOOTBALL_KEY;
+
+if (!BOT_TOKEN) {
     console.log("❌ BOT_TOKEN missing");
     process.exit(1);
 }
 
-if (!process.env.API_FOOTBALL_KEY) {
+if (!API_KEY) {
     console.log("❌ API_FOOTBALL_KEY missing");
     process.exit(1);
 }
 
-/* ===================================
-   BOT INIT
-=================================== */
+/* =====================================
+   TELEGRAM BOT
+===================================== */
 
 const bot = new TelegramBot(
-    process.env.BOT_TOKEN,
+    BOT_TOKEN,
     {
-        polling: true
+        polling: {
+            interval: 300,
+            autoStart: true,
+            params: {
+                timeout: 10
+            }
+        }
     }
 );
 
-console.log("✅ BOLAODDS PRO ACTIVE");
+console.log("✅ BOLAODDS BOT ACTIVE");
 
-/* ===================================
+/* =====================================
+   API CONFIG
+===================================== */
+
+const api = axios.create({
+    baseURL:
+        "https://v3.football.api-sports.io",
+    headers: {
+        "x-apisports-key": API_KEY
+    },
+    timeout: 15000
+});
+
+/* =====================================
    MENU
-=================================== */
+===================================== */
 
 function menu() {
 
@@ -39,8 +64,8 @@ function menu() {
             keyboard: [
                 ["📊 Match Hari Ini"],
                 ["📅 Match 1 Minggu Kedepan"],
-                ["🔥 Top Match"],
                 ["⚽ Live Match"],
+                ["🔥 Top Match"],
                 ["ℹ️ Info Bot"]
             ],
             resize_keyboard: true
@@ -48,168 +73,173 @@ function menu() {
     };
 }
 
-/* ===================================
-   API CONFIG
-=================================== */
+/* =====================================
+   SAFE REQUEST
+===================================== */
 
-const api = axios.create({
-    baseURL: "https://v3.football.api-sports.io",
-    headers: {
-        "x-apisports-key":
-            process.env.API_FOOTBALL_KEY
-    },
-    timeout: 15000
-});
+async function safeRequest(
+    endpoint,
+    params = {}
+) {
 
-/* ===================================
+    try {
+
+        const res =
+            await api.get(endpoint, {
+                params
+            });
+
+        return res.data.response || [];
+
+    } catch (err) {
+
+        console.log(
+            "❌ API ERROR:",
+            err.response?.status,
+            err.response?.data ||
+            err.message
+        );
+
+        return [];
+    }
+}
+
+/* =====================================
    GET FIXTURES
-=================================== */
+===================================== */
 
 async function getFixtures(days = 0) {
 
-    try {
+    const today =
+        new Date();
 
-        const today = new Date();
+    const future =
+        new Date();
 
-        const future = new Date();
-        future.setDate(today.getDate() + days);
+    future.setDate(
+        today.getDate() + days
+    );
 
-        const from =
-            today.toISOString().split("T")[0];
+    const from =
+        today.toISOString().split("T")[0];
 
-        const to =
-            future.toISOString().split("T")[0];
+    const to =
+        future.toISOString().split("T")[0];
 
-        console.log("FROM:", from);
-        console.log("TO:", to);
+    console.log(
+        "📅 FROM:",
+        from
+    );
 
-        const res = await api.get("/fixtures", {
-            params: {
-                from: from,
-                to: to
+    console.log(
+        "📅 TO:",
+        to
+    );
+
+    const fixtures =
+        await safeRequest(
+            "/fixtures",
+            {
+                from,
+                to
             }
-        });
-
-        const fixtures =
-            res.data.response || [];
-
-        console.log(
-            "✅ FIXTURES:",
-            fixtures.length
         );
 
-        return fixtures.slice(0, 10);
+    console.log(
+        "✅ FIXTURES:",
+        fixtures.length
+    );
 
-    } catch (err) {
-
-        console.log(
-            "❌ FIXTURE ERROR:",
-            err.response?.data || err.message
-        );
-
-        return [];
-    }
+    return fixtures.slice(0, 10);
 }
 
-/* ===================================
+/* =====================================
    LIVE MATCH
-=================================== */
+===================================== */
 
 async function getLiveFixtures() {
 
-    try {
-
-        const res = await api.get("/fixtures", {
-            params: {
+    const fixtures =
+        await safeRequest(
+            "/fixtures",
+            {
                 live: "all"
             }
-        });
-
-        return (
-            res.data.response || []
-        ).slice(0, 10);
-
-    } catch (err) {
-
-        console.log(
-            "❌ LIVE ERROR:",
-            err.response?.data || err.message
         );
 
-        return [];
-    }
+    return fixtures.slice(0, 10);
 }
 
-/* ===================================
-   MARKET ENGINE
-=================================== */
+/* =====================================
+   PREDICTION ENGINE
+===================================== */
 
-function prediction(match) {
+function buildPrediction(match) {
 
-    const home =
-        match.teams.home.name;
+    try {
 
-    const away =
-        match.teams.away.name;
+        const home =
+            match.teams?.home?.name ||
+            "Home";
 
-    const league =
-        match.league.name;
+        const away =
+            match.teams?.away?.name ||
+            "Away";
 
-    const date =
-        match.fixture.date;
+        const league =
+            match.league?.name ||
+            "Unknown League";
 
-    /* ===== 1X2 ===== */
+        const date =
+            match.fixture?.date ||
+            "-";
 
-    const homeWin =
-        Math.floor(Math.random() * 40 + 40);
+        /* ===== RANDOM ENGINE ===== */
 
-    const draw =
-        Math.floor(Math.random() * 20);
+        const homeWin =
+            Math.floor(
+                Math.random() * 40 + 40
+            );
 
-    const awayWin =
-        100 - homeWin - draw;
+        const draw =
+            Math.floor(
+                Math.random() * 20
+            );
 
-    /* ===== BTTS ===== */
+        const awayWin =
+            100 - homeWin - draw;
 
-    const btts =
-        Math.random() > 0.5
-            ? "YES"
-            : "NO";
+        const btts =
+            Math.random() > 0.5
+                ? "YES"
+                : "NO";
 
-    /* ===== OVER UNDER ===== */
+        const ou =
+            Math.random() > 0.5
+                ? "OVER 2.5"
+                : "UNDER 2.5";
 
-    const overUnder =
-        Math.random() > 0.5
-            ? "OVER 2.5"
-            : "UNDER 2.5";
+        const score =
+            `${Math.floor(Math.random()*4)}-${Math.floor(Math.random()*3)}`;
 
-    /* ===== SCORE ===== */
+        const corners =
+            `${Math.floor(Math.random()*5+8)}+`;
 
-    const score =
-        `${Math.floor(Math.random()*4)}-${Math.floor(Math.random()*3)}`;
+        let pick = "DRAW";
 
-    /* ===== CORNER ===== */
+        if (homeWin > awayWin)
+            pick = "HOME";
 
-    const corners =
-        `${Math.floor(Math.random()*5+8)}+`;
+        if (awayWin > homeWin)
+            pick = "AWAY";
 
-    /* ===== PICK ===== */
-
-    let topPick = "DRAW";
-
-    if (homeWin > awayWin)
-        topPick = "HOME";
-
-    if (awayWin > homeWin)
-        topPick = "AWAY";
-
-    return `🏆 ${league}
+        return `🏆 ${league}
 
 ⚽ ${home} vs ${away}
 
 📅 ${date}
 
-🔥 PICK: ${topPick}
+🔥 PICK: ${pick}
 
 📊 1X2
 🏠 Home: ${homeWin}%
@@ -219,18 +249,28 @@ function prediction(match) {
 🎯 BTTS: ${btts}
 
 📈 Goals:
-${overUnder}
+${ou}
 
 ⚽ Score:
 ${score}
 
 🚩 Corners:
 OVER ${corners}`;
+
+    } catch (err) {
+
+        console.log(
+            "❌ BUILD ERROR:",
+            err.message
+        );
+
+        return "❌ Error build prediction";
+    }
 }
 
-/* ===================================
-   GENERATE
-=================================== */
+/* =====================================
+   GENERATOR
+===================================== */
 
 async function generate(days = 0) {
 
@@ -240,20 +280,24 @@ async function generate(days = 0) {
     if (!fixtures.length) {
 
         return [
-            "❌ Tidak ada data pertandingan\n\n" +
-            "Kemungkinan:\n" +
-            "- API limit habis\n" +
-            "- API key salah\n" +
-            "- Tidak ada jadwal"
+`❌ Tidak ada data pertandingan
+
+Kemungkinan:
+- API limit habis
+- API key salah
+- Tidak ada jadwal
+- API sedang down`
         ];
     }
 
-    return fixtures.map(prediction);
+    return fixtures.map(
+        buildPrediction
+    );
 }
 
-/* ===================================
-   LIVE GENERATE
-=================================== */
+/* =====================================
+   LIVE GENERATOR
+===================================== */
 
 async function generateLive() {
 
@@ -267,147 +311,177 @@ async function generateLive() {
         ];
     }
 
-    return fixtures.map(prediction);
+    return fixtures.map(
+        buildPrediction
+    );
 }
 
-/* ===================================
+/* =====================================
    START
-=================================== */
+===================================== */
 
-bot.onText(/\/start/, async (msg) => {
+bot.onText(
+    /\/start/,
+    async (msg) => {
 
-    bot.sendMessage(
-        msg.chat.id,
+        bot.sendMessage(
+            msg.chat.id,
 
 `⚽ BOLAODDS PRO BOT
 
-✅ API-FOOTBALL
-✅ Real Time Fixtures
+✅ Real Time Match
 ✅ Semua Liga Dunia
+✅ Live Match
 ✅ 1X2
 ✅ BTTS
 ✅ Over Under
 ✅ Score
 ✅ Corner
-✅ Live Match
 
 👇 Pilih menu`,
 
-        menu()
-    );
-});
+            menu()
+        );
+    }
+);
 
-/* ===================================
+/* =====================================
    MESSAGE HANDLER
-=================================== */
+===================================== */
 
-bot.on("message", async (msg) => {
+bot.on(
+    "message",
+    async (msg) => {
 
-    const text = msg.text;
+        try {
 
-    /* TODAY */
+            const text =
+                msg.text;
 
-    if (text === "📊 Match Hari Ini") {
+            /* TODAY */
 
-        const data =
-            await generate(0);
+            if (
+                text ===
+                "📊 Match Hari Ini"
+            ) {
 
-        return bot.sendMessage(
-            msg.chat.id,
+                const data =
+                    await generate(0);
 
-            "📊 MATCH HARI INI\n\n" +
-            data.join("\n\n"),
+                return bot.sendMessage(
+                    msg.chat.id,
 
-            menu()
-        );
-    }
+                    "📊 MATCH HARI INI\n\n" +
+                    data.join("\n\n"),
 
-    /* WEEK */
+                    menu()
+                );
+            }
 
-    if (
-        text ===
-        "📅 Match 1 Minggu Kedepan"
-    ) {
+            /* WEEK */
 
-        const data =
-            await generate(7);
+            if (
+                text ===
+                "📅 Match 1 Minggu Kedepan"
+            ) {
 
-        return bot.sendMessage(
-            msg.chat.id,
+                const data =
+                    await generate(7);
 
-            "📅 MATCH 1 MINGGU KEDEPAN\n\n" +
-            data.join("\n\n"),
+                return bot.sendMessage(
+                    msg.chat.id,
 
-            menu()
-        );
-    }
+                    "📅 MATCH 1 MINGGU KEDEPAN\n\n" +
+                    data.join("\n\n"),
 
-    /* TOP MATCH */
+                    menu()
+                );
+            }
 
-    if (text === "🔥 Top Match") {
+            /* LIVE */
 
-        const data =
-            await generate(0);
+            if (
+                text ===
+                "⚽ Live Match"
+            ) {
 
-        return bot.sendMessage(
-            msg.chat.id,
+                const data =
+                    await generateLive();
 
-            "🔥 TOP MATCH\n\n" +
-            data.slice(0, 5).join("\n\n"),
+                return bot.sendMessage(
+                    msg.chat.id,
 
-            menu()
-        );
-    }
+                    "⚽ LIVE MATCH\n\n" +
+                    data.join("\n\n"),
 
-    /* LIVE */
+                    menu()
+                );
+            }
 
-    if (text === "⚽ Live Match") {
+            /* TOP MATCH */
 
-        const data =
-            await generateLive();
+            if (
+                text ===
+                "🔥 Top Match"
+            ) {
 
-        return bot.sendMessage(
-            msg.chat.id,
+                const data =
+                    await generate(0);
 
-            "⚽ LIVE MATCH\n\n" +
-            data.join("\n\n"),
+                return bot.sendMessage(
+                    msg.chat.id,
 
-            menu()
-        );
-    }
+                    "🔥 TOP MATCH\n\n" +
+                    data.slice(0, 5).join("\n\n"),
 
-    /* INFO */
+                    menu()
+                );
+            }
 
-    if (text === "ℹ️ Info Bot") {
+            /* INFO */
 
-        return bot.sendMessage(
-            msg.chat.id,
+            if (
+                text ===
+                "ℹ️ Info Bot"
+            ) {
+
+                return bot.sendMessage(
+                    msg.chat.id,
 
 `⚽ BOLAODDS PRO
 
-📡 Source:
+📡 API:
 API-FOOTBALL
 
 📊 Features:
 ✔ Real Time
 ✔ Live Match
-✔ Semua Liga Dunia
+✔ Semua Liga
 ✔ 1X2
 ✔ BTTS
 ✔ Over Under
 ✔ Score
 ✔ Corner
 
-🚀 Hosted on Railway`,
+🚀 Railway Ready`,
 
-            menu()
-        );
+                    menu()
+                );
+            }
+
+        } catch (err) {
+
+            console.log(
+                "❌ MESSAGE ERROR:",
+                err.message
+            );
+        }
     }
-});
+);
 
-/* ===================================
-   ERROR HANDLER
-=================================== */
+/* =====================================
+   GLOBAL ERROR
+===================================== */
 
 process.on(
     "unhandledRejection",
